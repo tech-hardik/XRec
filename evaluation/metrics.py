@@ -1,21 +1,18 @@
+import os
+import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../bart_score')))
+from bart_score import BARTScorer
+
 import evaluate
 import numpy as np
 from bert_score import BERTScorer
 import argparse
 import pickle
 import json
-from openai import OpenAI
-import concurrent.futures
-
-client = OpenAI(api_key="") # YOUR OPENAI KEY
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--dataset", type=str, default="amazon", help="amazon, yelp or google")
 args = parser.parse_args()
-
-with open("evaluation/system_prompt.txt", "r") as f:
-    system_prompt = f.read()
-
 
 class MetricScore:
     def __init__(self):
@@ -38,64 +35,44 @@ class MetricScore:
             bert_recall_std,
             bert_f1_std,
         ) = BERT_score(self.data, self.ref_data)
-        gpt_score, gpt_std = get_gpt_score(self.data, self.ref_data)
         tokens_predict = [s.split() for s in self.data]
         usr, _ = unique_sentence_percent(tokens_predict)
 
-        scores["gpt_score"] = gpt_score
+        # BLEURT
+        bleurt_score, bleurt_std = BLEURT_score(self.data, self.ref_data)
+        # BARTScore
+        bart_score, bart_std = BART_score(self.data, self.ref_data)
+
         scores["bert_precision"] = bert_precison
         scores["bert_recall"] = bert_recall
         scores["bert_f1"] = bert_f1
         scores["usr"] = usr
-
-        scores["gpt_std"] = gpt_std
         scores["bert_precision_std"] = bert_precison_std
         scores["bert_recall_std"] = bert_recall_std
         scores["bert_f1_std"] = bert_f1_std
+        scores["bleurt"] = bleurt_score
+        scores["bleurt_std"] = bleurt_std
+        scores["bart_score"] = bart_score
+        scores["bart_std"] = bart_std
         return scores
 
     def print_score(self):
         scores = self.get_score()
         print(f"dataset: {args.dataset}")
         print("Explanability Evaluation Metrics:")
-        print(f"gpt_score: {scores['gpt_score']:.4f}")
         print(f"bert_precision: {scores['bert_precision']:.4f}")
         print(f"bert_recall: {scores['bert_recall']:.4f}")
         print(f"bert_f1: {scores['bert_f1']:.4f}")
+        print(f"bleurt: {scores['bleurt']:.4f}")
+        print(f"bart_score: {scores['bart_score']:.4f}")
         print(f"usr: {scores['usr']:.4f}")
         print("-"*30)
         print("Standard Deviation:")
-        print(f"gpt_std: {scores['gpt_std']:.4f}")
         print(f"bert_precision_std: {scores['bert_precision_std']:.4f}")
         print(f"bert_recall_std: {scores['bert_recall_std']:.4f}")
         print(f"bert_f1_std: {scores['bert_f1_std']:.4f}")
-        
-
-def get_gpt_response(prompt):
-    completion = client.chat.completions.create(
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": prompt},
-        ],
-        model="gpt-3.5-turbo",
-    )
-    response = completion.choices[0].message.content
-    return float(response)
-
-
-def get_gpt_score(predictions, references):
-    prompts = []
-    for i in range(len(predictions)):
-        prompt = {
-            "prediction": predictions[i],
-            "reference": references[i],
-        }
-        prompts.append(json.dumps(prompt))
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=100) as executor:
-        results = list(executor.map(get_gpt_response, prompts))
-
-    return np.mean(results), np.std(results)
+        print(f"bleurt_std: {scores['bleurt_std']:.4f}")
+        print(f"bart_std: {scores['bart_std']:.4f}")
 
 def two_seq_same(sa, sb):
     if len(sa) != len(sb):
@@ -120,16 +97,11 @@ def unique_sentence_percent(sequence_batch):
     return len(unique_seq) / len(sequence_batch), len(unique_seq)
 
 def BERT_score(predictions, references):
-    bertscore = evaluate.load("bertscore")
-    results = bertscore.compute(
-        predictions=predictions,
-        references=references,
-        lang="en",
-        rescale_with_baseline=True,
-    )
-    precision = results["precision"]
-    recall = results["recall"]
-    f1 = results["f1"]
+    scorer = BERTScorer(lang="en", rescale_with_baseline=True)
+    P, R, F1 = scorer.score(predictions, references)
+    precision = P.tolist()
+    recall = R.tolist()
+    f1 = F1.tolist()
     return (
         np.mean(precision),
         np.mean(recall),
@@ -138,3 +110,15 @@ def BERT_score(predictions, references):
         np.std(recall),
         np.std(f1),
     )
+
+def BLEURT_score(predictions, references):
+    bleurt = evaluate.load("bleurt", "bleurt-base-128")
+    results = bleurt.compute(predictions=predictions, references=references)
+    scores = results["scores"]
+    return np.mean(scores), np.std(scores)
+
+def BART_score(predictions, references):
+    scorer = BARTScorer(device="cpu", checkpoint="facebook/bart-large-cnn")
+    scores = scorer.score(predictions, references)
+    scores = [float(s) for s in scores]
+    return np.mean(scores), np.std(scores)

@@ -1,5 +1,4 @@
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 import torch
 import pickle
 from utils.parse import args
@@ -7,7 +6,7 @@ from utils.metrics import Metric
 from models.lightgcn import LightGCN
 from utils.data_handler import DataHandler
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device('mps' if torch.backends.mps.is_available() else 'cpu')
 print("using device:", device)
 
 class TrainGNN:

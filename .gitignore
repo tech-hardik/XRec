@@ -19,3 +19,37 @@ node_modules/
 # Ignore IDE/editor specific files
 .vscode/
 .idea/
+
+# Virtual environment files
+venv/
+
+# Python cache files
+__pycache__/
+
+# Python files
+*.pyc
+*.pkl
+*.pt
+*.bin
+*.safetensors
+
+# IPython notebook checkpoints
+*.ipynb_checkpoints
+
+# CSV files
+*.csv
+
+# JSON files
+*.json
+
+# Video files
+*.mp4
+
+# Audio files
+*.mp3
+*.wav
+
+# Image files
+*.jpg
+*.jpeg
+*.png

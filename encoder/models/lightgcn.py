@@ -3,6 +3,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+# Add device selection at the top
+DEVICE = torch.device('mps' if torch.backends.mps.is_available() else 'cpu')
 
 class LightGCN(nn.Module):
     def __init__(self, num_user, num_item, adj):
@@ -25,7 +27,13 @@ class LightGCN(nn.Module):
         embeds = torch.concat([self.user_embeds, self.item_embeds], axis=0)
         embeds_list = [embeds]
         for layer in range(self.n_layers):
-            embeddings = torch.spmm(adj.cuda(), embeds_list[-1])
+            # Move embeds to device
+            embeds_on_device = embeds_list[-1].to(DEVICE)
+            # For spmm, adj must be on CPU if using MPS
+            if DEVICE.type == 'mps':
+                embeddings = torch.spmm(adj.cpu(), embeds_on_device.cpu()).to(DEVICE)
+            else:
+                embeddings = torch.spmm(adj.to(DEVICE), embeds_on_device)
             embeds_list.append(embeddings)
 
         # Aggregate embeddings from all layers
